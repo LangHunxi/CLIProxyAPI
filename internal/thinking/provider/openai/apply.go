@@ -10,42 +10,9 @@ import (
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/thinking"
-	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
-
-// validReasoningEffortLevels contains the values we allow to pass through to
-// reasoning_effort without clamping.
-var validReasoningEffortLevels = map[string]struct{}{
-	"none":    {},
-	"auto":    {},
-	"minimal": {},
-	"low":     {},
-	"medium":  {},
-	"high":    {},
-	"xhigh":   {},
-}
-
-// clampReasoningEffort maps any thinking level string to a value that is safe
-// to send as OpenAI reasoning_effort. Non-standard CPA-internal values are
-// mapped to the nearest standard equivalent.
-//
-// Mapping rules:
-//   - none / auto / minimal / low / medium / high / xhigh → returned as-is
-//   - anything else                                 → "medium" (safe default)
-func clampReasoningEffort(level string) string {
-	normalized := strings.ToLower(strings.TrimSpace(level))
-	if _, ok := validReasoningEffortLevels[normalized]; ok {
-		return normalized
-	}
-	clamped := string(thinking.LevelMedium)
-	log.WithFields(log.Fields{
-		"original": normalized,
-		"clamped":  clamped,
-	}).Debug("openai: reasoning_effort clamped to nearest valid standard value")
-	return clamped
-}
 
 // Applier implements thinking.ProviderApplier for OpenAI models.
 //
@@ -91,7 +58,7 @@ func (a *Applier) Apply(body []byte, config thinking.ThinkingConfig, modelInfo *
 	}
 
 	if config.Mode == thinking.ModeLevel {
-		result, _ := sjson.SetBytes(body, "reasoning_effort", clampReasoningEffort(string(config.Level)))
+		result, _ := sjson.SetBytes(body, "reasoning_effort", string(config.Level))
 		return result, nil
 	}
 
@@ -112,7 +79,7 @@ func (a *Applier) Apply(body []byte, config thinking.ThinkingConfig, modelInfo *
 		return body, nil
 	}
 
-	result, _ := sjson.SetBytes(body, "reasoning_effort", clampReasoningEffort(effort))
+	result, _ := sjson.SetBytes(body, "reasoning_effort", effort)
 	return result, nil
 }
 
@@ -147,7 +114,7 @@ func applyCompatibleOpenAI(body []byte, config thinking.ThinkingConfig) ([]byte,
 		return body, nil
 	}
 
-	result, _ := sjson.SetBytes(body, "reasoning_effort", clampReasoningEffort(effort))
+	result, _ := sjson.SetBytes(body, "reasoning_effort", effort)
 	return result, nil
 }
 
