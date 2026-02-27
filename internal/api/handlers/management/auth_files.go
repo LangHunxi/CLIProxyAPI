@@ -420,6 +420,9 @@ func (h *Handler) buildAuthFileEntry(auth *coreauth.Auth) gin.H {
 	if v := strings.TrimSpace(auth.Prefix); v != "" {
 		entry["prefix"] = v
 	}
+	if !auth.NextRetryAfter.IsZero() {
+		entry["next_retry_after"] = auth.NextRetryAfter
+	}
 	if path != "" {
 		entry["path"] = path
 		entry["source"] = "file"
