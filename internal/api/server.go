@@ -64,6 +64,73 @@ func defaultRequestLoggerFactory(cfg *config.Config, configPath string) logging.
 	return logging.NewFileRequestLogger(cfg.RequestLog, logsDir, configDir, cfg.ErrorLogsMaxFiles)
 }
 
+func detectLegacyScalarAPIKeys(configFilePath string) (bool, error) {
+	if strings.TrimSpace(configFilePath) == "" {
+		return false, nil
+	}
+	data, err := os.ReadFile(configFilePath)
+	if err != nil {
+		return false, err
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return false, err
+	}
+	if len(root.Content) == 0 {
+		return false, nil
+	}
+	mapping := root.Content[0]
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		return false, nil
+	}
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		keyNode := mapping.Content[i]
+		valueNode := mapping.Content[i+1]
+		if keyNode == nil || valueNode == nil {
+			continue
+		}
+		if strings.TrimSpace(keyNode.Value) != "api-keys" {
+			continue
+		}
+		if valueNode.Kind != yaml.SequenceNode {
+			return false, nil
+		}
+		for _, item := range valueNode.Content {
+			if item != nil && item.Kind == yaml.ScalarNode {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	return false, nil
+}
+
+func migrateLegacyAPIKeysToObjectFormat(
+	cfg *config.Config,
+	stats map[string]*usagerecord.APIKeyStats,
+	configFilePath string,
+) error {
+	if cfg == nil {
+		return nil
+	}
+	for i := range cfg.APIKeys {
+		cfg.APIKeys[i].Key = strings.TrimSpace(cfg.APIKeys[i].Key)
+		if cfg.APIKeys[i].Key == "" {
+			continue
+		}
+		if stat, ok := stats[cfg.APIKeys[i].Key]; ok && stat != nil {
+			cfg.APIKeys[i].UsageCount = stat.UsageCount
+			cfg.APIKeys[i].InputTokens = stat.InputTokens
+			cfg.APIKeys[i].OutputTokens = stat.OutputTokens
+			cfg.APIKeys[i].LastUsedAt = stat.LastUsedAt
+		}
+	}
+	if strings.TrimSpace(configFilePath) == "" {
+		return nil
+	}
+	return config.SaveConfigPreserveComments(configFilePath, cfg)
+}
+
 // WithMiddleware appends additional Gin middleware during server construction.
 func WithMiddleware(mw ...gin.HandlerFunc) ServerOption {
 	return func(cfg *serverOptionConfig) {
@@ -284,11 +351,40 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	usage.StartSnapshotPersistence(usage.GetRequestStatistics(), usageSnapshotPath, 1*time.Minute)
 
 	// Initialize usage records SQLite storage
+	legacyAPIKeysDetected, legacyDetectErr := detectLegacyScalarAPIKeys(configFilePath)
+	if legacyDetectErr != nil {
+		log.WithError(legacyDetectErr).Warn("failed to detect legacy api-keys format")
+	}
 	if err := usagerecord.InitDefaultStore(logDir); err != nil {
 		log.WithError(err).Warn("failed to initialize usage record store")
+		if legacyAPIKeysDetected {
+			if migrateErr := migrateLegacyAPIKeysToObjectFormat(cfg, map[string]*usagerecord.APIKeyStats{}, configFilePath); migrateErr != nil {
+				log.WithError(migrateErr).Warn("failed to migrate legacy api-keys format")
+			} else {
+				log.Info("migrated legacy api-keys to object format")
+			}
+		}
 	} else {
 		usagerecord.SetStore(usagerecord.DefaultStore())
 		usagerecord.Register()
+		if legacyAPIKeysDetected {
+			apiKeyStats := map[string]*usagerecord.APIKeyStats{}
+			if store := usagerecord.DefaultStore(); store != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				stats, statsErr := store.GetAPIKeyStats(ctx)
+				cancel()
+				if statsErr != nil {
+					log.WithError(statsErr).Warn("failed to load api key stats for legacy migration")
+				} else {
+					apiKeyStats = stats
+				}
+			}
+			if migrateErr := migrateLegacyAPIKeysToObjectFormat(cfg, apiKeyStats, configFilePath); migrateErr != nil {
+				log.WithError(migrateErr).Warn("failed to migrate legacy api-keys format")
+			} else {
+				log.Info("migrated legacy api-keys to object format with usage stats")
+			}
+		}
 		// Set callback to increment API key token counts on each usage record
 		usagerecord.SetTokenIncrementor(s.mgmt.IncrementAPIKeyTokens)
 		// Set callback to increment API key usage count and last used time

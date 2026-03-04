@@ -1,7 +1,6 @@
 package management
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -10,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v6/internal/usagerecord"
 )
 
 // Generic helpers for list[string]
@@ -108,58 +106,28 @@ func (h *Handler) deleteFromStringList(c *gin.Context, target *[]string, after f
 	c.JSON(400, gin.H{"error": "missing index or value"})
 }
 
-// apiKeyResponse is a DTO for API key responses (avoids copying mutex from config.ApiKeyEntry)
-type apiKeyResponse struct {
-	ID           string `json:"id,omitempty"`
-	Key          string `json:"api-key"`
-	Name         string `json:"name,omitempty"`
-	IsActive     bool   `json:"is-active"`
-	UsageCount   int64  `json:"usage-count,omitempty"`
-	InputTokens  int64  `json:"input-tokens,omitempty"`
-	OutputTokens int64  `json:"output-tokens,omitempty"`
-	LastUsedAt   string `json:"last-used-at,omitempty"`
-	CreatedAt    string `json:"created-at,omitempty"`
+func apiKeyEntriesToStrings(entries []config.ApiKeyEntry) []string {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(entries))
+	for i := range entries {
+		key := strings.TrimSpace(entries[i].Key)
+		if key == "" {
+			continue
+		}
+		out = append(out, key)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // api-keys
 func (h *Handler) GetAPIKeys(c *gin.Context) {
-	// Get persistent stats from SQLite database
-	var persistentStats map[string]*usagerecord.APIKeyStats
-	if store := usagerecord.DefaultStore(); store != nil {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
-		defer cancel()
-		var err error
-		persistentStats, err = store.GetAPIKeyStats(ctx)
-		if err != nil {
-			// Log error but continue with empty stats
-			c.Error(err)
-		}
-	}
-
-	// Build response DTOs (avoids copying mutex from config.ApiKeyEntry)
-	apiKeys := make([]apiKeyResponse, len(h.cfg.APIKeys))
-	for i, entry := range h.cfg.APIKeys {
-		apiKeys[i] = apiKeyResponse{
-			ID:         entry.ID,
-			Key:        entry.Key,
-			Name:       entry.Name,
-			IsActive:   entry.IsActive,
-			CreatedAt:  entry.CreatedAt,
-			LastUsedAt: entry.LastUsedAt,
-		}
-		// Merge persistent stats from SQLite if available
-		if stats, ok := persistentStats[entry.Key]; ok {
-			// Use persistent stats (from DB) as the source of truth
-			apiKeys[i].UsageCount = stats.UsageCount
-			apiKeys[i].InputTokens = stats.InputTokens
-			apiKeys[i].OutputTokens = stats.OutputTokens
-			if stats.LastUsedAt != "" {
-				apiKeys[i].LastUsedAt = stats.LastUsedAt
-			}
-		}
-	}
-
-	c.JSON(200, gin.H{"api-keys": apiKeys})
+	// Align to upstream: return a simple list of api key strings.
+	c.JSON(200, gin.H{"api-keys": apiKeyEntriesToStrings(h.cfg.APIKeys)})
 }
 
 func (h *Handler) PutAPIKeys(c *gin.Context) {
@@ -241,9 +209,10 @@ func (h *Handler) PatchAPIKeys(c *gin.Context) {
 		// For updating by old/new key value (backward compatible)
 		Old *string `json:"old"`
 		New *string `json:"new"`
-		// For updating by index (deprecated, but kept for compatibility)
-		Index *int                `json:"index"`
-		Value *config.ApiKeyEntry `json:"value"`
+		// For updating by index (legacy)
+		Index *int `json:"index"`
+		// Value may be either a string (upstream-compatible) or an ApiKeyEntry object (extended).
+		Value json.RawMessage `json:"value"`
 		// Partial update fields (use pointers to distinguish nil from zero value)
 		IsActive *bool   `json:"is-active"`
 		Name     *string `json:"name"`
@@ -252,6 +221,53 @@ func (h *Handler) PatchAPIKeys(c *gin.Context) {
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(400, gin.H{"error": "invalid body"})
 		return
+	}
+
+	// Update by index with value (string or object) - legacy compatibility.
+	if body.Index != nil && *body.Index >= 0 && *body.Index < len(h.cfg.APIKeys) && len(body.Value) > 0 {
+		// Prefer parsing as string (upstream-compatible TUI expects this).
+		var asString string
+		if err := json.Unmarshal(body.Value, &asString); err == nil {
+			newKey := strings.TrimSpace(asString)
+			if newKey == "" {
+				c.JSON(400, gin.H{"error": "key cannot be empty"})
+				return
+			}
+			for i, existing := range h.cfg.APIKeys {
+				if i != *body.Index && existing.Key == newKey {
+					c.JSON(409, gin.H{"error": "key already exists"})
+					return
+				}
+			}
+			h.cfg.APIKeys[*body.Index].Key = newKey
+			h.persist(c)
+			return
+		}
+
+		// Fallback: parse as full ApiKeyEntry object.
+		var entry config.ApiKeyEntry
+		if err := json.Unmarshal(body.Value, &entry); err == nil {
+			entry.Key = strings.TrimSpace(entry.Key)
+			if entry.Key == "" {
+				c.JSON(400, gin.H{"error": "key cannot be empty"})
+				return
+			}
+			for i, existing := range h.cfg.APIKeys {
+				if i != *body.Index && existing.Key == entry.Key {
+					c.JSON(409, gin.H{"error": "key already exists"})
+					return
+				}
+			}
+			if entry.ID == "" {
+				entry.ID = h.cfg.APIKeys[*body.Index].ID
+			}
+			if entry.CreatedAt == "" {
+				entry.CreatedAt = h.cfg.APIKeys[*body.Index].CreatedAt
+			}
+			h.cfg.APIKeys[*body.Index] = entry
+			h.persist(c)
+			return
+		}
 	}
 
 	// Find target entry by ID or Key
@@ -315,26 +331,22 @@ func (h *Handler) PatchAPIKeys(c *gin.Context) {
 		}
 	}
 
-	// Update by index with full value (legacy support)
-	if body.Index != nil && body.Value != nil && *body.Index >= 0 && *body.Index < len(h.cfg.APIKeys) {
-		entry := *body.Value
-		entry.Key = strings.TrimSpace(entry.Key)
-		if entry.Key == "" {
-			c.JSON(400, gin.H{"error": "key cannot be empty"})
-			return
-		}
-		// Check for duplicate key (excluding current index)
-		for i, existing := range h.cfg.APIKeys {
-			if i != *body.Index && existing.Key == entry.Key {
+	// Append-only add (compat): allow {"new": "..."} or {"old": null, "new": "..."}.
+	if body.New != nil && strings.TrimSpace(*body.New) != "" && body.Old == nil {
+		newKey := strings.TrimSpace(*body.New)
+		for _, entry := range h.cfg.APIKeys {
+			if entry.Key == newKey {
 				c.JSON(409, gin.H{"error": "key already exists"})
 				return
 			}
 		}
-		// Preserve ID if not provided
-		if entry.ID == "" {
-			entry.ID = h.cfg.APIKeys[*body.Index].ID
-		}
-		h.cfg.APIKeys[*body.Index] = entry
+		now := time.Now().UTC().Format(time.RFC3339)
+		h.cfg.APIKeys = append(h.cfg.APIKeys, config.ApiKeyEntry{
+			ID:        uuid.New().String(),
+			Key:       newKey,
+			IsActive:  true,
+			CreatedAt: now,
+		})
 		h.persist(c)
 		return
 	}
