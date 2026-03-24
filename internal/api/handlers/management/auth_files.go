@@ -340,6 +340,10 @@ func (h *Handler) listAuthFilesFromDisk(c *gin.Context) {
 				if prefixValue != "" {
 					fileData["prefix"] = prefixValue
 				}
+				userAgentValue := strings.TrimSpace(gjson.GetBytes(data, "user_agent").String())
+				if userAgentValue != "" {
+					fileData["user_agent"] = userAgentValue
+				}
 				if pv := gjson.GetBytes(data, "priority"); pv.Exists() {
 					switch pv.Type {
 					case gjson.Number:
@@ -421,6 +425,15 @@ func (h *Handler) buildAuthFileEntry(auth *coreauth.Auth) gin.H {
 	}
 	if v := strings.TrimSpace(auth.Prefix); v != "" {
 		entry["prefix"] = v
+	}
+	if v := strings.TrimSpace(authAttribute(auth, "user_agent")); v != "" {
+		entry["user_agent"] = v
+	} else if auth.Metadata != nil {
+		if rawUserAgent, ok := auth.Metadata["user_agent"].(string); ok {
+			if trimmed := strings.TrimSpace(rawUserAgent); trimmed != "" {
+				entry["user_agent"] = trimmed
+			}
+		}
 	}
 	if !auth.NextRetryAfter.IsZero() {
 		entry["next_retry_after"] = auth.NextRetryAfter
@@ -877,7 +890,7 @@ func (h *Handler) registerAuthFromFile(ctx context.Context, path string, data []
 	return err
 }
 
-// PatchAuthFileMetadata updates selected metadata fields (e.g. proxy_url, prefix) for an auth file.
+// PatchAuthFileMetadata updates selected metadata fields (e.g. proxy_url, prefix, user_agent) for an auth file.
 func (h *Handler) PatchAuthFileMetadata(c *gin.Context) {
 	if h.authManager == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "core auth manager unavailable"})
@@ -889,6 +902,7 @@ func (h *Handler) PatchAuthFileMetadata(c *gin.Context) {
 		ProxyURL      *string `json:"proxy_url"`
 		ProxyURLCamel *string `json:"proxyUrl"`
 		Prefix        *string `json:"prefix"`
+		UserAgent     *string `json:"user_agent"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
@@ -906,8 +920,9 @@ func (h *Handler) PatchAuthFileMetadata(c *gin.Context) {
 		proxyPtr = req.ProxyURLCamel
 	}
 	prefixPtr := req.Prefix
+	userAgentPtr := req.UserAgent
 
-	if proxyPtr == nil && prefixPtr == nil {
+	if proxyPtr == nil && prefixPtr == nil && userAgentPtr == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no fields to update"})
 		return
 	}
@@ -989,6 +1004,15 @@ func (h *Handler) PatchAuthFileMetadata(c *gin.Context) {
 			return
 		} else {
 			metadata["prefix"] = v
+		}
+		updated = true
+	}
+	if userAgentPtr != nil {
+		v := strings.TrimSpace(*userAgentPtr)
+		if v == "" {
+			delete(metadata, "user_agent")
+		} else {
+			metadata["user_agent"] = v
 		}
 		updated = true
 	}
