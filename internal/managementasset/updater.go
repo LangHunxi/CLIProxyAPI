@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	defaultManagementReleaseURL  = "https://api.github.com/repos/AoaoMH/CLIProxyAPIPanel/releases/latest"
+	defaultManagementReleaseURL  = "https://api.github.com/repos/LangHunxi/CLIProxyAPIPanel/releases/latest"
 	defaultManagementFallbackURL = "https://cpamc.router-for.me/"
 	managementAssetName          = "management.html"
 	httpUserAgent                = "CLIProxyAPI-management-updater"

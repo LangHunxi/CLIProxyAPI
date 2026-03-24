@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	DefaultPanelGitHubRepository = "https://github.com/AoaoMH/CLIProxyAPIPanel"
+	DefaultPanelGitHubRepository = "https://github.com/LangHunxi/CLIProxyAPIPanel"
 	DefaultPprofAddr             = "127.0.0.1:8316"
 )
 
