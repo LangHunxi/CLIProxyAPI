@@ -286,16 +286,6 @@ func (s *Service) applyCoreAuthAddOrUpdate(ctx context.Context, auth *coreauth.A
 	var err error
 	if existing, ok := s.coreManager.GetByID(auth.ID); ok {
 		auth.CreatedAt = existing.CreatedAt
-		auth.LastRefreshedAt = existing.LastRefreshedAt
-		auth.NextRefreshAfter = existing.NextRefreshAfter
-		auth.NextRetryAfter = existing.NextRetryAfter
-
-		// Preserve runtime state that is not derived from config/auth files.
-		auth.Unavailable = existing.Unavailable
-		auth.Quota = existing.Quota
-		auth.LastError = existing.LastError
-		auth.ModelStates = existing.ModelStates
-
 		// Preserve management-disabled state for file-backed auths so file edits/config reloads
 		// (which do not encode disabled state) don't accidentally re-enable credentials.
 		if existing.Disabled && !auth.Disabled {
@@ -306,6 +296,20 @@ func (s *Service) applyCoreAuthAddOrUpdate(ctx context.Context, auth *coreauth.A
 					auth.Status = existing.Status
 					auth.StatusMessage = existing.StatusMessage
 				}
+			}
+		}
+
+		if !existing.Disabled && existing.Status != coreauth.StatusDisabled && !auth.Disabled && auth.Status != coreauth.StatusDisabled {
+			auth.LastRefreshedAt = existing.LastRefreshedAt
+			auth.NextRefreshAfter = existing.NextRefreshAfter
+			auth.NextRetryAfter = existing.NextRetryAfter
+
+			// Preserve runtime state that is not derived from config/auth files.
+			auth.Unavailable = existing.Unavailable
+			auth.Quota = existing.Quota
+			auth.LastError = existing.LastError
+			if len(auth.ModelStates) == 0 && len(existing.ModelStates) > 0 {
+				auth.ModelStates = existing.ModelStates
 			}
 		}
 		if auth.Runtime == nil {
