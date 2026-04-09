@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -51,6 +52,28 @@ func newTestServer(t *testing.T) *Server {
 		_ = usagerecord.CloseDefaultStore()
 	})
 	return server
+}
+
+func TestHealthz(t *testing.T) {
+	server := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rr := httptest.NewRecorder()
+	server.engine.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: got %d want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var resp struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response JSON: %v; body=%s", err, rr.Body.String())
+	}
+	if resp.Status != "ok" {
+		t.Fatalf("unexpected response status: got %q want %q", resp.Status, "ok")
+	}
 }
 
 func TestAmpProviderModelRoutes(t *testing.T) {
@@ -176,6 +199,8 @@ func TestDefaultRequestLoggerFactory_UsesResolvedLogDirectory(t *testing.T) {
 		http.StatusBadGateway,
 		map[string][]string{"Content-Type": []string{"application/json"}},
 		[]byte(`{"error":"upstream failure"}`),
+		nil,
+		nil,
 		nil,
 		nil,
 		nil,
