@@ -5,6 +5,30 @@ import (
 	"time"
 )
 
+func firstStaticModelWithThinkingLevels() string {
+	data := getModels()
+	for _, models := range [][]*ModelInfo{
+		data.Claude,
+		data.Gemini,
+		data.Vertex,
+		data.GeminiCLI,
+		data.AIStudio,
+		data.CodexFree,
+		data.CodexTeam,
+		data.CodexPlus,
+		data.CodexPro,
+		data.Kimi,
+		data.Antigravity,
+	} {
+		for _, model := range models {
+			if model != nil && model.Thinking != nil && len(model.Thinking.Levels) > 0 {
+				return model.ID
+			}
+		}
+	}
+	return ""
+}
+
 func TestGetModelInfoReturnsClone(t *testing.T) {
 	r := newTestModelRegistry()
 	r.RegisterClient("client-1", "gemini", []*ModelInfo{{
@@ -136,13 +160,18 @@ func TestGetAvailableModelsReturnsClonedSupportedParameters(t *testing.T) {
 }
 
 func TestLookupModelInfoReturnsCloneForStaticDefinitions(t *testing.T) {
-	first := LookupModelInfo("glm-4.6")
+	modelID := firstStaticModelWithThinkingLevels()
+	if modelID == "" {
+		t.Fatal("expected at least one static model with thinking levels")
+	}
+
+	first := LookupModelInfo(modelID)
 	if first == nil || first.Thinking == nil || len(first.Thinking.Levels) == 0 {
 		t.Fatalf("expected static model with thinking levels, got %+v", first)
 	}
 	first.Thinking.Levels[0] = "mutated"
 
-	second := LookupModelInfo("glm-4.6")
+	second := LookupModelInfo(modelID)
 	if second == nil || second.Thinking == nil || len(second.Thinking.Levels) == 0 || second.Thinking.Levels[0] == "mutated" {
 		t.Fatalf("expected static lookup clone, got %+v", second)
 	}

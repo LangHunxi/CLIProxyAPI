@@ -69,18 +69,18 @@ func TestManager_ShouldRetryAfterError_UsesOAuthModelAliasForCooldown(t *testing
 	m := NewManager(nil, nil, nil)
 	m.SetRetryConfig(3, 30*time.Second, 0)
 	m.SetOAuthModelAlias(map[string][]internalconfig.OAuthModelAlias{
-		"qwen": {
-			{Name: "qwen3.6-plus", Alias: "coder-model"},
+		"kimi": {
+			{Name: "deepseek-v3.1", Alias: "pool-model"},
 		},
 	})
 
-	routeModel := "coder-model"
-	upstreamModel := "qwen3.6-plus"
+	routeModel := "pool-model"
+	upstreamModel := "deepseek-v3.1"
 	next := time.Now().Add(5 * time.Second)
 
 	auth := &Auth{
 		ID:       "auth-1",
-		Provider: "qwen",
+		Provider: "kimi",
 		ModelStates: map[string]*ModelState{
 			upstreamModel: {
 				Unavailable:    true,
@@ -99,7 +99,7 @@ func TestManager_ShouldRetryAfterError_UsesOAuthModelAliasForCooldown(t *testing
 	}
 
 	_, _, maxWait := m.retrySettings()
-	wait, shouldRetry := m.shouldRetryAfterError(&Error{HTTPStatus: 429, Message: "quota"}, 0, []string{"qwen"}, routeModel, maxWait)
+	wait, shouldRetry := m.shouldRetryAfterError(&Error{HTTPStatus: 429, Message: "quota"}, 0, []string{"kimi"}, routeModel, maxWait)
 	if !shouldRetry {
 		t.Fatalf("expected shouldRetry=true, got false (wait=%v)", wait)
 	}
@@ -687,6 +687,57 @@ func TestManager_Execute_DisableCooling_DoesNotBlackoutAfter429RetryAfter(t *tes
 	}
 	if !state.NextRetryAfter.IsZero() {
 		t.Fatalf("expected NextRetryAfter to be zero when disable_cooling=true, got %v", state.NextRetryAfter)
+	}
+}
+
+func TestManager_Execute_DisableCooling_RetriesAfter429RetryAfter(t *testing.T) {
+	prev := quotaCooldownDisabled.Load()
+	quotaCooldownDisabled.Store(false)
+	t.Cleanup(func() { quotaCooldownDisabled.Store(prev) })
+
+	m := NewManager(nil, nil, nil)
+	m.SetRetryConfig(3, 100*time.Millisecond, 0)
+
+	executor := &authFallbackExecutor{
+		id: "claude",
+		executeErrors: map[string]error{
+			"auth-429-retryafter-exec": &retryAfterStatusError{
+				status:     http.StatusTooManyRequests,
+				message:    "quota exhausted",
+				retryAfter: 5 * time.Millisecond,
+			},
+		},
+	}
+	m.RegisterExecutor(executor)
+
+	auth := &Auth{
+		ID:       "auth-429-retryafter-exec",
+		Provider: "claude",
+		Metadata: map[string]any{
+			"disable_cooling": true,
+		},
+	}
+	if _, errRegister := m.Register(context.Background(), auth); errRegister != nil {
+		t.Fatalf("register auth: %v", errRegister)
+	}
+
+	model := "test-model-429-retryafter-exec"
+	reg := registry.GetGlobalRegistry()
+	reg.RegisterClient(auth.ID, "claude", []*registry.ModelInfo{{ID: model}})
+	t.Cleanup(func() { reg.UnregisterClient(auth.ID) })
+
+	req := cliproxyexecutor.Request{Model: model}
+	_, errExecute := m.Execute(context.Background(), []string{"claude"}, req, cliproxyexecutor.Options{})
+	if errExecute == nil {
+		t.Fatal("expected execute error")
+	}
+	if statusCodeFromError(errExecute) != http.StatusTooManyRequests {
+		t.Fatalf("execute status = %d, want %d", statusCodeFromError(errExecute), http.StatusTooManyRequests)
+	}
+
+	calls := executor.ExecuteCalls()
+	if len(calls) != 4 {
+		t.Fatalf("execute calls = %d, want 4 (initial + 3 retries)", len(calls))
 	}
 }
 
