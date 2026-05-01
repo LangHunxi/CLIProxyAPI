@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	ginUsageRecordIDKey   = "__usage_record_id__"
+	ginUsageRecordIDKey    = "__usage_record_id__"
 	ginUsageRecordStartKey = "request_start_time"
 	ginUsageRecordPanicKey = "__usage_record_panic__"
 )
@@ -61,24 +61,24 @@ func GinUsageRecordMiddleware() gin.HandlerFunc {
 		model := extractModelBestEffort(c.Request.URL.Path, requestBody)
 
 		rec := &Record{
-			RequestID:      requestID,
-			Timestamp:      start,
-			IP:             c.ClientIP(),
-			Model:          model,
-			Provider:       "pending",
-			IsStreaming:    false,
-			InputTokens:    0,
-			OutputTokens:   0,
-			TotalTokens:    0,
-			CachedTokens:   0,
+			RequestID:       requestID,
+			Timestamp:       start,
+			IP:              c.ClientIP(),
+			Model:           model,
+			Provider:        "pending",
+			IsStreaming:     false,
+			InputTokens:     0,
+			OutputTokens:    0,
+			TotalTokens:     0,
+			CachedTokens:    0,
 			ReasoningTokens: 0,
-			DurationMs:     0,
-			StatusCode:     0,
-			Success:        true,
-			RequestURL:     requestURL,
-			RequestMethod:  c.Request.Method,
-			RequestHeaders: requestHeaders,
-			RequestBody:    string(requestBody),
+			DurationMs:      0,
+			StatusCode:      0,
+			Success:         true,
+			RequestURL:      requestURL,
+			RequestMethod:   c.Request.Method,
+			RequestHeaders:  requestHeaders,
+			RequestBody:     string(requestBody),
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

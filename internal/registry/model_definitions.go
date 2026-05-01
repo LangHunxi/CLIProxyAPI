@@ -7,6 +7,7 @@ import (
 )
 
 const codexBuiltinImageModelID = "gpt-image-2"
+const codexFreeExcludedGPT55ModelID = "gpt-5.5"
 
 // staticModelsJSON mirrors the top-level structure of models.json.
 type staticModelsJSON struct {
@@ -50,7 +51,7 @@ func GetAIStudioModels() []*ModelInfo {
 
 // GetCodexFreeModels returns model definitions for the Codex free plan tier.
 func GetCodexFreeModels() []*ModelInfo {
-	return WithCodexBuiltins(cloneModelInfos(getModels().CodexFree))
+	return WithCodexBuiltins(filterModelInfos(cloneModelInfos(getModels().CodexFree), codexFreeExcludedGPT55ModelID))
 }
 
 // GetCodexTeamModels returns model definitions for the Codex team plan tier.
@@ -140,6 +141,35 @@ func upsertModelInfos(models []*ModelInfo, extras ...*ModelInfo) []*ModelInfo {
 	}
 
 	filtered = append(filtered, extraList...)
+	return filtered
+}
+
+func filterModelInfos(models []*ModelInfo, excludedIDs ...string) []*ModelInfo {
+	if len(models) == 0 || len(excludedIDs) == 0 {
+		return models
+	}
+
+	excluded := make(map[string]struct{}, len(excludedIDs))
+	for _, id := range excludedIDs {
+		key := strings.ToLower(strings.TrimSpace(id))
+		if key != "" {
+			excluded[key] = struct{}{}
+		}
+	}
+	if len(excluded) == 0 {
+		return models
+	}
+
+	filtered := make([]*ModelInfo, 0, len(models))
+	for _, model := range models {
+		if model == nil {
+			continue
+		}
+		if _, found := excluded[strings.ToLower(strings.TrimSpace(model.ID))]; found {
+			continue
+		}
+		filtered = append(filtered, model)
+	}
 	return filtered
 }
 

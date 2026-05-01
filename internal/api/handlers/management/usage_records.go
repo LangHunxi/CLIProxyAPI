@@ -268,6 +268,7 @@ func (h *Handler) GetIntervalTimeline(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
+
 // GetRequestCandidates returns all candidate records for a specific request ID.
 func (h *Handler) GetRequestCandidates(c *gin.Context) {
 	store := usagerecord.DefaultStore()

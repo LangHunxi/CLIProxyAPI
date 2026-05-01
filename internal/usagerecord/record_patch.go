@@ -145,4 +145,3 @@ func (s *Store) PatchByID(ctx context.Context, id int64, patch RecordPatch) (int
 	affected, _ := result.RowsAffected()
 	return affected, nil
 }
-
