@@ -40,6 +40,15 @@ go build -o test-output ./cmd/server && rm test-output # Verify compile (REQUIRE
 - `sdk/cliproxy/` — Embeddable SDK entry (service/builder/watchers/pipeline)
 - `test/` — Cross-module integration tests
 
+## Downstream Usage Statistics Protection
+- This fork intentionally keeps local historical usage/statistics functionality even if upstream removes it. When syncing or cherry-picking from upstream, preserve the downstream statistics components and adapt upstream changes around them instead of deleting or disabling them.
+- Treat the statistics stack as protected downstream code: `internal/usage/`, `internal/usagerecord/`, `sdk/cliproxy/usage/`, `internal/api/handlers/management/usage.go`, `internal/api/handlers/management/usage_records.go`, `internal/api/handlers/management/dashboard.go`, `internal/runtime/executor/helps/usage_helpers.go`, `internal/tui/usage_tab.go`, and related tests under `test/` or package-local `*_test.go`.
+- Preserve the management API surface for usage data: `/v0/management/usage`, `/v0/management/usage/export`, `/v0/management/usage/import`, `/v0/management/api-keys/usage`, `/v0/management/usage-records`, and all `/v0/management/usage-records/*` analytics endpoints.
+- Preserve config and startup behavior for statistics, including `usage-statistics-enabled`, `usage-records-retention-days`, usage snapshot persistence, SQLite usage-record storage initialization, and registration of usage plugins.
+- Preserve request/token accounting emitted from runtime executors and helpers. Upstream changes may rename or refactor execution paths, but usage records must continue to capture provider, model, API key/auth identity, success/failure, latency, token details, request metadata, and candidate routing where available.
+- When an upstream merge conflicts with statistics code, prefer a compatibility adaptation that keeps the downstream API and persisted data formats working. Do not resolve conflicts by taking an upstream deletion of statistics files, routes, config fields, database stores, TUI views, SDK usage hooks, or tests.
+- If a statistics component truly must change to follow upstream architecture, keep backward compatibility for existing persisted data and API clients, document the migration in the change, and add/update focused tests covering the preserved statistics behavior.
+
 ## Code Conventions
 - Keep changes small and simple (KISS)
 - Comments in English only
