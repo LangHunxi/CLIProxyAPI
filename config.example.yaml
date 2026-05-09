@@ -69,6 +69,10 @@ usage-statistics-enabled: false
 # Usage records SQLite database retention (days). Default: 30. Set to 0 to keep forever (disable cleanup).
 usage-records-retention-days: 30
 
+# How long (in seconds) Redis usage queue items are retained in memory for the RESP interface (LPOP/RPOP).
+# Default: 60. Max: 3600.
+redis-usage-queue-retention-seconds: 60
+
 # Proxy URL. Supports socks5/http/https protocols. Example: socks5://user:pass@192.168.1.1:1080/
 # Per-entry proxy-url also supports "direct" or "none" to bypass both the global proxy-url and environment proxies explicitly.
 proxy-url: ""
