@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	sdkaccess "github.com/router-for-me/CLIProxyAPI/v6/sdk/access"
+	sdkaccess "github.com/router-for-me/CLIProxyAPI/v7/sdk/access"
 )
 
 // ApiKeyEntry represents an API key with extended metadata for management.

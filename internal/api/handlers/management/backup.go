@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v6/internal/backup"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/backup"
 )
 
 // BackupCreateRequest represents a request to create a backup

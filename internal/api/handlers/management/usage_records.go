@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v6/internal/usagerecord"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/usagerecord"
 )
 
 // GetUsageRecords returns a paginated list of usage records.
